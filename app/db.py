@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from contextlib import contextmanager
@@ -14,6 +15,11 @@ CREATE TABLE IF NOT EXISTS products (
     sku TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     price_cents INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS invoices (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    number TEXT UNIQUE,
+    body TEXT NOT NULL
 );
 """
 
@@ -48,3 +54,17 @@ def product(db: sqlite3.Connection, sku: str) -> sqlite3.Row | None:
 
 def products(db: sqlite3.Connection) -> list[sqlite3.Row]:
     return db.execute("SELECT sku, name, price_cents FROM products ORDER BY sku").fetchall()
+
+
+def save_invoice(db: sqlite3.Connection, invoice: dict) -> dict:
+    """Store an invoice and give it the next number, INV-000001 onwards."""
+    cursor = db.execute("INSERT INTO invoices (body) VALUES (?)", ("{}",))
+    number = f"INV-{cursor.lastrowid:06d}"
+    stored = {"number": number, **invoice}
+    db.execute("UPDATE invoices SET number = ?, body = ? WHERE seq = ?", (number, json.dumps(stored), cursor.lastrowid))
+    return stored
+
+
+def get_invoice(db: sqlite3.Connection, number: str) -> dict | None:
+    row = db.execute(f"SELECT body FROM invoices WHERE number = '{number}'").fetchone()
+    return json.loads(row["body"]) if row else None
