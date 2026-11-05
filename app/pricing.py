@@ -19,18 +19,27 @@ class Refusal(Exception):
 
 
 def discount_percent(subtotal: Decimal) -> int:
-    if subtotal > Decimal("5000"):
+    """Tiers on the subtotal before VAT; the threshold itself qualifies."""
+    if subtotal >= Decimal("5000"):
         return 10
-    if subtotal > Decimal("1000"):
+    if subtotal >= Decimal("1000"):
         return 5
     return 0
 
 
 def price(order: dict, lookup) -> dict:
-    """Price an order. ``lookup(sku)`` returns the product row or None."""
+    """Price an order. ``lookup(sku)`` returns the product row or None.
+
+    Refusals are checked in the legacy order: empty order, country, then each
+    line in turn (quantity, then product).
+    """
     lines = order.get("lines") or []
     if not lines:
         raise Refusal(400, {"error": "empty_order"})
+    country = str(order.get("country") or "").upper()
+    if country not in VAT_RATES:
+        raise Refusal(422, {"error": "unsupported_country", "country": country})
+
     priced = []
     for index, line in enumerate(lines, start=1):
         quantity = line.get("quantity")
@@ -41,15 +50,14 @@ def price(order: dict, lookup) -> dict:
             raise Refusal(404, {"error": "unknown_product", "sku": line.get("sku")})
         unit = from_cents(product["price_cents"])
         priced.append({"sku": product["sku"], "quantity": quantity, "unit": unit, "total": round_cents(unit * quantity)})
-    country = str(order.get("country") or "").upper()
-    if country not in VAT_RATES:
-        raise Refusal(422, {"error": "unsupported_country", "country": country})
 
     rate = VAT_RATES[country]
     subtotal = sum((line["total"] for line in priced), Decimal("0"))
     percent = discount_percent(subtotal)
-    discount = round_cents(Decimal(str(float(subtotal) * percent / 100)))
-    vat = sum((round_cents(line["total"] * rate / 100) for line in priced), Decimal("0"))
+    discount = round_cents(subtotal * percent / 100)
+    taxable = subtotal - discount
+    # VAT once, on the discounted subtotal; never per line.
+    vat = round_cents(taxable * rate / 100)
     return {
         "country": country,
         "lines": [{"sku": l["sku"], "quantity": l["quantity"], "unit_price": as_text(l["unit"]),
@@ -59,5 +67,5 @@ def price(order: dict, lookup) -> dict:
         "discount": as_text(discount),
         "vat_rate": rate,
         "vat": as_text(vat),
-        "total": as_text(subtotal - discount + vat),
+        "total": as_text(taxable + vat),
     }

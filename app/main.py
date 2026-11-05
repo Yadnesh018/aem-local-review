@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 from json import JSONDecodeError
 
@@ -39,8 +40,10 @@ def list_products() -> list[dict]:
 
 @app.post("/invoices")
 async def create_invoice(request: Request) -> JSONResponse:
+    # Like the legacy service, an empty body is read as {} (and so refused as empty_order).
+    raw = await request.body()
     try:
-        order = await request.json()
+        order = json.loads(raw or b"{}")
     except (JSONDecodeError, UnicodeDecodeError):
         return JSONResponse({"error": "malformed_body"}, status_code=400)
     with db.connect() as connection:

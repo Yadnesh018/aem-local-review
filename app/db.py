@@ -66,5 +66,5 @@ def save_invoice(db: sqlite3.Connection, invoice: dict) -> dict:
 
 
 def get_invoice(db: sqlite3.Connection, number: str) -> dict | None:
-    row = db.execute(f"SELECT body FROM invoices WHERE number = '{number}'").fetchone()
+    row = db.execute("SELECT body FROM invoices WHERE number = ?", (number,)).fetchone()
     return json.loads(row["body"]) if row else None
