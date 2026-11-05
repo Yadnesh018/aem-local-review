@@ -1,13 +1,17 @@
-"""The target service. Products are ported; invoices are the open story (docs/STORY.md)."""
+"""The target service: products, and invoice creation and retrieval."""
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
+from json import JSONDecodeError
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app import db
 from app.money import as_text, from_cents
+from app.pricing import Refusal, price
 
 
 @asynccontextmanager
@@ -32,3 +36,28 @@ def list_products() -> list[dict]:
              "price": as_text(from_cents(row["price_cents"]))}
             for row in db.products(connection)
         ]
+
+
+@app.post("/invoices")
+async def create_invoice(request: Request) -> JSONResponse:
+    # Like the legacy service, an empty body is read as {} (and so refused as empty_order).
+    raw = await request.body()
+    try:
+        order = json.loads(raw or b"{}")
+    except (JSONDecodeError, UnicodeDecodeError):
+        return JSONResponse({"error": "malformed_body"}, status_code=400)
+    with db.connect() as connection:
+        try:
+            invoice = price(order, lambda sku: db.product(connection, sku))
+        except Refusal as refusal:
+            return JSONResponse(refusal.body, status_code=refusal.status)
+        return JSONResponse(db.save_invoice(connection, invoice), status_code=201)
+
+
+@app.get("/invoices/{number}")
+def read_invoice(number: str) -> JSONResponse:
+    with db.connect() as connection:
+        invoice = db.get_invoice(connection, number)
+    if invoice is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(invoice)
