@@ -1,0 +1,25 @@
+const { request } = require('undici');
+
+async function createInvoiceWithDiscount() {
+  const response = await request('http://localhost:3000/invoices', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer valid-token'
+    },
+    body: JSON.stringify({
+      items: [{
+        description: 'Item 1',
+        price: 100.00
+      }],
+      discount: 25.00
+    })
+  });
+
+  const invoice = await response.body.json();
+
+  expect(response.statusCode).toBe(400);
+  expect(invoice.error).toBe('Discount cannot exceed 20%');
+}
+
+createInvoiceWithDiscount();

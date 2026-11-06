@@ -1,0 +1,24 @@
+const { request } = require('undici');
+
+async function createInvoiceWithoutDiscount() {
+  const response = await request('http://localhost:3000/invoices', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer valid-token'
+    },
+    body: JSON.stringify({
+      items: [{
+        description: 'Item 1',
+        price: 100.00
+      }]
+    })
+  });
+
+  const invoice = await response.body.json();
+
+  expect(response.statusCode).toBe(201);
+  expect(invoice.total).toBe(100.00);
+}
+
+createInvoiceWithoutDiscount();
